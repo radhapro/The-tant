@@ -1,64 +1,82 @@
  #include <Arduino.h>
- // =====  basic moter test for high speed ===== 
-// Motor Pins
-const int stepPin = 25;
-const int dirPin = 26;
-const int enPin = 27;
+#include <WiFi.h>
+#include <ESPAsyncWebServer.h>
 
-// YAHAN SPEED CONTROL KAREIN //
-// Is number ko jitna chhota karenge, speed utni badhegi.
-// Agar motor vibrate kare aur chale nahi, to is number ko thoda badha dein.
-const int stepDelay = 400; // Microseconds mein delay
+// ******************************************************
+// ***** यहाँ अपना Wi-Fi का नाम और पासवर्ड डालें! ******
+const char* ssid = "Robozz Lab";
+const char* password = "Robotics@cloud";
+// ******************************************************
 
-void setup() {
+// LED किस पिन पर है
+const int ledPin = 2; 
+
+// वेब सर्वर के लिए ऑब्जेक्ट बना रहे हैं (पोर्ट 80 पर)
+AsyncWebServer server(80);
+
+// यह HTML कोड है जो वेबपेज पर दिखेगा
+const char index_html[] PROGMEM = R"rawliteral(
+<!DOCTYPE HTML><html>
+<head>
+  <title>ESP32 Web Server</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    html { font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: center;}
+    .button { background-color: #4CAF50; border: none; color: white; padding: 16px 40px;
+      text-decoration: none; font-size: 30px; margin: 2px; cursor: pointer;}
+    .button2 {background-color: #f44336;}
+  </style>
+</head>
+<body>
+  <h1>ESP32 Web Server</h1>
+  <p><a href="/on"><button class="button">ON</button></a></p>
+  <p><a href="/off"><button class="button button2">OFF</button></a></p>
+</body>
+</html>)rawliteral";
+
+void setup(){
+  // सीरियल मॉनिटर शुरू करें ताकि हम IP एड्रेस देख सकें
   Serial.begin(115200);
-  Serial.println("\n\n--- High Speed Diagnostic Test ---");
-  Serial.print("Step Delay set to: ");
-  Serial.println(stepDelay);
 
-  // Pins ko setup karna
-  pinMode(stepPin, OUTPUT);
-  pinMode(dirPin, OUTPUT);
-  pinMode(enPin, OUTPUT);
+  // LED पिन को आउटपुट सेट करें
+  pinMode(ledPin, OUTPUT);
+  digitalWrite(ledPin, LOW);
 
-  // Motor driver ko ON karna
-  digitalWrite(enPin, LOW);
-  delay(100);
+  // Wi-Fi से कनेक्ट होना शुरू करें
+  WiFi.begin(ssid, password);
+  Serial.println("Connecting to WiFi...");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  // जब कनेक्ट हो जाए, तो IP एड्रेस प्रिंट करें
+  Serial.println("\nWiFi connected!");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+
+  // --- वेब सर्वर के रास्ते (Routes) सेट करें ---
+  // जब कोई मुख्य पेज (/) पर आए, तो उसे HTML कोड भेजो
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send_P(200, "text/html", index_html);
+  });
+
+  // जब कोई /on पर आए, तो LED ऑन करो
+  server.on("/on", HTTP_GET, [](AsyncWebServerRequest *request){
+    digitalWrite(ledPin, HIGH);
+    request->send_P(200, "text/html", index_html);
+  });
+
+  // जब कोई /off पर आए, तो LED ऑफ करो
+  server.on("/off", HTTP_GET, [](AsyncWebServerRequest *request){
+    digitalWrite(ledPin, LOW);
+    request->send_P(200, "text/html", index_html);
+  });
+
+  // वेब सर्वर शुरू करो
+  server.begin();
 }
 
-void loop() {
-  // === TEST 1: Direction 1 (LOW) ===
-  Serial.println("Test 1: Turning in one direction (3 seconds)...");
-  digitalWrite(dirPin, LOW);
-  delay(1);
-  
-  unsigned long startTime = millis();
-  while (millis() - startTime < 3000) {
-    digitalWrite(stepPin, HIGH);
-    delayMicroseconds(stepDelay); // Yahan change kiya hai
-    digitalWrite(stepPin, LOW);
-    delayMicroseconds(stepDelay); // Yahan bhi change kiya hai
-  }
-  
-  Serial.println("Motor stopped.");
-  Serial.println("------------------------------------");
-  delay(2000); // Rukne ka time thoda kam kar diya
-
-
-  // === TEST 2: Direction 2 (HIGH) ===
-  Serial.println("Test 2: Turning in OPPOSITE direction (3 seconds)...");
-  digitalWrite(dirPin, HIGH);
-  delay(1);
-  
-  startTime = millis();
-  while (millis() - startTime < 3000) {
-    digitalWrite(stepPin, HIGH);
-    delayMicroseconds(stepDelay); // Yahan change kiya hai
-    digitalWrite(stepPin, LOW);
-    delayMicroseconds(stepDelay); // Yahan bhi change kiya hai
-  }
-
-  Serial.println("Motor stopped.");
-  Serial.println("====================================");
-  delay(2000); // Rukne ka time thoda kam kar diya
+void loop(){
+  // लूप में कुछ नहीं करना है, सर्वर अपना काम खुद करता है
 }
