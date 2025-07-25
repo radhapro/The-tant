@@ -1,82 +1,111 @@
- #include <Arduino.h>
+#include <Arduino.h>
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
 
-// ******************************************************
-// ***** यहाँ अपना Wi-Fi का नाम और पासवर्ड डालें! ******
+// =================== वाई-फ़ाई की जानकारी ===================
 const char* ssid = "Robozz Lab";
 const char* password = "Robotics@cloud";
-// ******************************************************
+// ==========================================================
 
-// LED किस पिन पर है
-const int ledPin = 2; 
 
-// वेब सर्वर के लिए ऑब्जेक्ट बना रहे हैं (पोर्ट 80 पर)
+// =================== मोटर के पिन (बदले नहीं) =================
+const int stepPin = 25;
+const int dirPin = 26;
+const int enPin = 27;
+// ==========================================================
+
+
+// मोटर की स्पीड (इस नंबर को कम करने से स्पीड बढ़ेगी)
+const int stepDelay = 500; // Microseconds
+
+// ग्लोबल वैरिएबल मोटर की स्थिति को याद रखने के लिए
+bool motorRunning = false;
+int motorDirection = LOW; // LOW = Clockwise, HIGH = Anti-Clockwise
+
 AsyncWebServer server(80);
 
-// यह HTML कोड है जो वेबपेज पर दिखेगा
+// वेबपेज का नया HTML कोड (मोटर के लिए)
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html>
 <head>
-  <title>ESP32 Web Server</title>
+  <title>Stepper Motor Control</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     html { font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: center;}
-    .button { background-color: #4CAF50; border: none; color: white; padding: 16px 40px;
-      text-decoration: none; font-size: 30px; margin: 2px; cursor: pointer;}
-    .button2 {background-color: #f44336;}
+    .button { background-color: #008CBA; border: none; color: white; padding: 16px 40px;
+      text-decoration: none; font-size: 30px; margin: 8px; cursor: pointer; width: 80%;}
+    .stop {background-color: #f44336;}
+    .dir {background-color: #555555;}
   </style>
 </head>
 <body>
-  <h1>ESP32 Web Server</h1>
-  <p><a href="/on"><button class="button">ON</button></a></p>
-  <p><a href="/off"><button class="button button2">OFF</button></a></p>
+  <h1>ESP32 Stepper Control</h1>
+  <p><a href="/clockwise"><button class="button">UP</button></a></p>
+  <p><a href="/anticlockwise"><button class="button dir">Down</button></a></p>
+  <p><a href="/stop"><button class="button stop">STOP</button></a></p>
 </body>
 </html>)rawliteral";
 
 void setup(){
-  // सीरियल मॉनिटर शुरू करें ताकि हम IP एड्रेस देख सकें
   Serial.begin(115200);
 
-  // LED पिन को आउटपुट सेट करें
-  pinMode(ledPin, OUTPUT);
-  digitalWrite(ledPin, LOW);
+  // मोटर के पिन सेटअप करना
+  pinMode(stepPin, OUTPUT);
+  pinMode(dirPin, OUTPUT);
+  pinMode(enPin, OUTPUT);
+  digitalWrite(enPin, LOW); // मोटर ड्राइवर को चालू करना
 
-  // Wi-Fi से कनेक्ट होना शुरू करें
+  // वाई-फ़ाई से कनेक्ट करना
   WiFi.begin(ssid, password);
   Serial.println("Connecting to WiFi...");
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
-
-  // जब कनेक्ट हो जाए, तो IP एड्रेस प्रिंट करें
   Serial.println("\nWiFi connected!");
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
 
-  // --- वेब सर्वर के रास्ते (Routes) सेट करें ---
-  // जब कोई मुख्य पेज (/) पर आए, तो उसे HTML कोड भेजो
+  // === वेब सर्वर के नए रास्ते (Routes) ===
+  // मुख्य पेज
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send_P(200, "text/html", index_html);
   });
 
-  // जब कोई /on पर आए, तो LED ऑन करो
-  server.on("/on", HTTP_GET, [](AsyncWebServerRequest *request){
-    digitalWrite(ledPin, HIGH);
+  // Clockwise के लिए
+  server.on("/clockwise", HTTP_GET, [](AsyncWebServerRequest *request){
+    motorDirection = LOW;
+    motorRunning = true;
     request->send_P(200, "text/html", index_html);
   });
 
-  // जब कोई /off पर आए, तो LED ऑफ करो
-  server.on("/off", HTTP_GET, [](AsyncWebServerRequest *request){
-    digitalWrite(ledPin, LOW);
+  // Anti-Clockwise के लिए
+  server.on("/anticlockwise", HTTP_GET, [](AsyncWebServerRequest *request){
+    motorDirection = HIGH;
+    motorRunning = true;
+    request->send_P(200, "text/html", index_html);
+  });
+  
+  // रोकने के लिए
+  server.on("/stop", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    motorRunning = false;
     request->send_P(200, "text/html", index_html);
   });
 
-  // वेब सर्वर शुरू करो
+  // वेब सर्वर शुरू करना
   server.begin();
 }
 
 void loop(){
-  // लूप में कुछ नहीं करना है, सर्वर अपना काम खुद करता है
+  // यह लूप लगातार चलेगा और मोटर को तभी घुमाएगा जब motorRunning = true हो
+  if (motorRunning) {
+    digitalWrite(dirPin, motorDirection); // दिशा सेट करना
+    
+    // मोटर का एक स्टेप लेना
+    digitalWrite(stepPin, HIGH);
+    delayMicroseconds(stepDelay);
+    digitalWrite(stepPin, LOW);
+    delayMicroseconds(stepDelay);
+  }
 }
